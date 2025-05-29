@@ -46,29 +46,6 @@ suppressPackageStartupMessages({
 })
 ```
 
-```{r load libraries}
-# suppressPackageStartupMessages(
-# {
-#     library(caret)
-#     library(cluster)
-#     library(ClusterR)
-#     library(data.table)
-#     library(dplyr)
-#     library(e1071)
-#     library(ggplot2)
-#     library(lattice)
-#     library(factoextra)
-#     library(openxlsx)
-#     library(ranger)
-#     library(recipes)
-#     library(rpart)
-#     library(rpart.plot)
-#     library(tidymodels)
-#     library(workflows)
-#     }
-# )
-```
-
 ```{r load red30 Tech Sales data}
 sales <- openxlsx::read.xlsx("data/Red30 Tech Sales.xlsx", 1, detectDates = TRUE)
 ```
