@@ -1,0 +1,731 @@
+---
+title: "Customers segmentation and payment prediction project"
+author: "Daniel Navarro"
+date: "2025-05-26"
+output: html_document
+toc: True
+---
+
+# Goal:
+
+Perform a Exploratory Data Analysis (EDA) on customers, to help better understand the customers segmentation, along with evaluating which customers are properly paying their order invoices and predict payment status.
+
+# Processes executed:
+
+The executed processes on the data are not limited but at least:
+
+Exploratory Data Analysis EDA.
+Preliminar visualization of the data.
+Classification Analysis and prediction modelling of the payment status.
+Cluster Analysis of customer segmentation and payment prediction.
+
+# Needed libraries:
+
+For reproduction of this project the following libraries will be needed, beepr, caret, cluster, ClusterR, data.table, dplyr, e1071, ggplot2, lattice, factoextra, openxlsx, ranger, recipes, rpart, rpart.plot, tidymodels.
+
+# Exploring customer data
+
+```{r installation of required packages if not present, echo=FALSE}
+suppressPackageStartupMessages({
+    if (!require(beepr)) install.packages('beepr')
+    if (!require(caret)) install.packages('caret')
+    if (!require(cluster)) install.packages('cluster')
+    if (!require(ClusterR)) install.packages('ClusterR')
+    if (!require(data.table)) install.packages('data.table')
+    if (!require(dplyr)) install.packages('dplyr')
+    if (!require(e1071)) install.packages('e1071')
+    if (!require(ggplot2)) install.packages('ggplot2')
+    if (!require(lattice)) install.packages('lattice')
+    if (!require(factoextra)) install.packages('factoextra')
+    if (!require(openxlsx)) install.packages("openxlsx")
+    if (!require(ranger)) install.packages("ranger")
+    if (!require(recipes)) install.packages("recipes")
+    if (!require(rpart)) install.packages("rpart")
+    if (!require(rpart.plot)) install.packages("rpart.plot")
+    if (!require(tidymodels)) install.packages("tidymodels")
+})
+```
+
+```{r load libraries}
+# suppressPackageStartupMessages(
+# {
+#     library(caret)
+#     library(cluster)
+#     library(ClusterR)
+#     library(data.table)
+#     library(dplyr)
+#     library(e1071)
+#     library(ggplot2)
+#     library(lattice)
+#     library(factoextra)
+#     library(openxlsx)
+#     library(ranger)
+#     library(recipes)
+#     library(rpart)
+#     library(rpart.plot)
+#     library(tidymodels)
+#     library(workflows)
+#     }
+# )
+```
+
+```{r load red30 Tech Sales data}
+sales <- openxlsx::read.xlsx("data/Red30 Tech Sales.xlsx", 1, detectDates = TRUE)
+```
+
+```{r}
+summary(sales)
+```
+
+```{r narrow sales summary}
+summary(sales[ ,c('Quantity', 'Price', 'Discount', 'Order.Total')])
+```
+
+```{r payment status value counts}
+table(sales$Payment.Status)
+```
+
+```{r payment status proportions}
+prop.table(table(sales$Payment.Status))
+```
+
+```{r get payment plan by total number of orders}
+table(sales$Payment.Plan)
+proportions(table(sales$Payment.Plan))
+```
+
+```{r check for null values in sales}
+is.null(sales)
+sum(is.null(sales))
+```
+
+## Determine which customers place the largest order by dollar amount
+
+```{r first sort data by order total}
+# sales |> arrange(Order.Total)
+sales[order(sales$Order.Total, decreasing = TRUE), ]
+```
+
+```{r first sort data by order quantity}
+sales[order(sales$Quantity, decreasing = TRUE), ]
+```
+
+```{r get top N values by customer state}
+data_mod <- sales[order(sales$Order.Total, decreasing = TRUE), ]
+data_mod <- data.table(data_mod, key = 'CustState')
+data_mod <- data_mod[, head(.SD, 1), by = CustState]
+```
+
+```{r get top customer by total number of orders}
+sales |> count(CustName, sort = TRUE)
+```
+
+```{r Get gustomer type by total number of orders}
+table(sales$CustomerType)
+prop.table(table(sales$CustomerType))
+```
+
+```{r average sales and quantity by customer type}
+sales |> group_by(CustomerType) |> 
+    summarise(mean_sales = mean(Order.Total),
+              mean_quantity = mean(Quantity))
+```
+
+```{r total sales and quantity by customer type}
+sales |> group_by(CustomerType) |> 
+    summarise(Total_sales = sum(Order.Total),
+              total_quantity = sum(Quantity))
+```
+
+```{r get top customer states by total number of orders}
+sales |> count(CustState, sort = TRUE)
+```
+
+```{r first review product categories sold by customer type}
+table(sales$CustomerType, sales$ProdCategory)
+```
+
+```{r second sort data by order total}
+sales[order(sales$Order.Total, decreasing = TRUE), ]
+```
+```{r second sort data by order quantity}
+sales[order(sales$Quantity, decreasing = TRUE), ]
+```
+
+```{r get top emplozees by total number of orders}
+# sales |> group_by(Employee.Name) |> 
+    # summarise(Orders = sum(Quantity))
+sales |> count(Employee.Name, sort = TRUE)
+```
+
+```{r get top employee job positions by total number of orders}
+sales |> count(Employee.Job.Title, sort = TRUE)
+```
+
+```{r review employee job titles}
+table(sales$Employee.Job.Title)
+round(proportions((table(sales$Employee.Job.Title))), 4) * 100
+```
+
+```{r review employee sales regions}
+table(sales$Sales.Region)
+barplot(
+round(proportions(table(sales$Sales.Region)), 4) * 100
+)
+round(proportions(table(sales$Sales.Region)), 4) * 100
+```
+
+```{r average sales and quantity by employee job titles}
+sales |> group_by(Employee.Job.Title) |> 
+    summarise(mean_sales_USD = round(mean(Order.Total), 2),
+              mean_Qty = round(mean(Quantity)))
+```
+
+```{r total sales and quantity by employee job titles}
+sales |> group_by(Employee.Job.Title) |> 
+    summarise(total_sales_USD = sum(Order.Total),
+              total_Qty = sum(Quantity))
+```
+
+```{r review product categories sold by employee job title}
+table(sales$Employee.Job.Title, sales$ProdCategory)
+round(proportions(table(sales$Employee.Job.Title, sales$ProdCategory)) * 100, 2)
+```
+
+```{r review sales region by employee job title}
+table(sales$Employee.Job.Title, sales$Sales.Region)
+```
+
+## How to determine the best product category
+
+```{r sort data by order total}
+sales[order(sales$Order.Total, decreasing = TRUE), ]
+```
+
+```{r sort data by order quantity}
+sales[order(sales$Quantity, decreasing = TRUE), ]
+```
+
+```{r get top product names by total number of orders}
+sales |> count(ProdName, sort = TRUE)
+```
+
+```{r get top product categories by total number of orders}
+sales |> count(ProdCategory, sort = TRUE)
+```
+
+```{r review product category proportions}
+# proportions(table(sales$ProdCategory)) # same information
+round(prop.table(
+    table(
+        sales$ProdCategory
+    )) * 100, 2)
+```
+
+```{r average sales and quantity by product category}
+sales |> group_by(ProdCategory) |> 
+    summarise(mean_sales = mean(Order.Total),
+              mean_Qty = mean(Quantity)) |> 
+    arrange(desc(mean_Qty))
+
+sales |> group_by(ProdCategory) |> 
+    summarise(mean_sales = mean(Order.Total),
+              mean_Qty = mean(Quantity)) |> 
+    arrange(desc(mean_Qty))
+```
+
+```{r total sales and quantity by product category}
+sales |> group_by(ProdCategory) |> 
+    summarise(total_sales = sum(Order.Total),
+              total_Qty = sum(Quantity)) |> 
+    arrange(desc(total_sales))
+    
+```
+
+```{r review product categories sold by sales regions}
+table(sales$ProdCategory, sales$Sales.Region)
+```
+
+```{r review product categories sold by order type}
+table(sales$ProdCategory, sales$OrderType)
+```
+
+```{r review product categories sold by customer type}
+table(sales$ProdCategory, sales$CustomerType)
+```
+
+## Customer longevity analysis
+
+1. Count how many customers there are in each year of when they were added to the system desc order.
+2. Evaluate when customers where added by the state they reside in.
+
+```{r Customer Longevity Analysis}
+sales |> group_by(DateCustAdded) |> 
+    count(DateCustAdded)
+
+plot(sales |> group_by(DateCustAdded) |> 
+            count(DateCustAdded))
+
+```
+
+```{r Evaluate when the Customers where added by the State they reside in}
+table(sales$DateCustAdded, sales$CustState)
+```
+
+```{r}
+sales |> count(DateCustAdded, sort = TRUE)
+
+table(sales$CustState, sales$DateCustAdded)
+
+sales[order(sales$DateCustAdded, decreasing = TRUE), ]
+
+sales[order(sales$DateCustAdded, decreasing = FALSE), ]
+```
+
+```{r determining years of customers loyalty}
+plot <- sales |> 
+    mutate(Loyalty_Years = as.integer((year(Sys.time())) - (DateCustAdded))) |> 
+    select(DateCustAdded, Loyalty_Years) |> 
+    arrange(desc(Loyalty_Years))
+
+hist(plot$Loyalty_Years)
+```
+
+# Classification Analysis
+
+Understand relationship between input and output variables, learn patterns and predict results.
+
+Will use Decision Trees, Random Forests and Support Vector Machines (SVMs).
+
+## Goal
+
+Predict customer's payment status.
+
+### Prepare data for classification
+
+```{r get order month}
+sales$OrderMonth <- format(sales$OrderDate, "%B")
+summary(sales)
+```
+
+```{r get order year}
+sales$OrderYear <- format(sales$OrderDate, "%Y")
+summary(sales$OrderYear)
+```
+
+```{r factor payment status}
+sales$Payment.Status <- as.factor(sales$Payment.Status)
+```
+
+```{r get subset of sales data}
+sales_subset <- subset(sales, select = c(Employee.Job.Title, Sales.Region, OrderMonth, OrderYear, OrderType, CustomerType, CustState, Quantity, Price, Discount, Order.Total, Payment.Plan, Payment.Status))
+```
+
+```{r split train and test data}
+set.seed(42)
+bound <- floor((nrow(sales_subset) / 4)*3)
+
+df <- sales_subset[sample(nrow(sales_subset)), ]
+train <- df[1:bound, ]
+test <- df[(bound + 1):nrow(df), ]
+summary(train)
+summary(test)
+```
+
+### Running a decision tree algorithm
+
+```{r Create decision tree model}
+tree <- decision_tree() |> 
+    set_engine("rpart") |> 
+    set_mode("classification")
+```
+
+```{r Create recipe}
+df_recipe <- recipe(Payment.Status~ ., data = df) |>
+    step_normalize(all_numeric())
+```
+
+```{r Create decision tree workflow}
+tree_wf <- workflow() |> 
+    add_recipe(df_recipe) |> 
+    add_model(tree) |> 
+    fit(train)
+```
+
+```{r get summary of tree_wf}
+summary(tree_wf)
+```
+
+```{r first prediction on model}
+predResults <- data.frame(predict(tree_wf, test))
+colnames(predResults) <- c("test_pred_tree")
+test <- cbind(test, predResults)
+test
+```
+
+```{r plot decision tree, fig.width= 17, fig.height= 7}
+fit <- rpart(Payment.Status~., data = train, method = "class")
+rpart.plot(fit, tweak = 1.5)
+```
+
+### Run a random forest algorithm
+
+```{r Create random forest model}
+ rf <- rand_forest() |> 
+    set_engine("ranger", importance = "impurity") |> 
+    set_mode("classification")
+```
+
+```{r Create random forest workflow}
+tree_rand_forest <- workflow() |> 
+    add_recipe(df_recipe) |> 
+    add_model(rf) |> 
+    fit(train)
+```
+
+```{r Get summary of tree_rand_forest}
+summary(tree_rand_forest)
+```
+
+```{r second prediction on model}
+predResults <- data.frame(predict(tree_rand_forest, test))
+colnames(predResults) <- c("test_pred_rf")
+test <- cbind(test, predResults)
+test
+```
+
+### Run a support vector machine algorithm
+
+```{r Create SVM model}
+classifier <- svm(formula = Payment.Status~., 
+                  data = train,
+                  type = "C-classification",
+                  kernel = "linear")
+```
+
+```{r Get summary of classifier}
+summary(classifier)
+```
+
+```{r third prediction on model}
+test$test_pred_svm <- predict(classifier, test)
+test
+```
+
+### Understanding summary metrics
+
+Confusion Matrix:
+Sensitivity: How many values are correctly identified as positive that are actually positive. (TP / FN + TP)
+Specificity: How many values are correctly identified as negative that are actually negative. (TN / FP + TN)
+Precision: How many positive values are actually positive. (TP / TP + FP)
+
+### Decide which algorithm is best
+
+```{r Review test data}
+test
+test[ ,13:16]
+```
+
+```{r Create confusion matrix for decision tree}
+conf_mat(test, truth = Payment.Status, estimate = test_pred_tree)
+```
+
+```{r get summary metrics of decision tree confusion matrix}
+dt_metrics <- metric_set(accuracy, sens, spec, precision, f_meas, kap)
+dt_metrics(test, truth = Payment.Status, estimate = test_pred_tree)
+```
+
+```{r Create confusion matrix for random forest}
+conf_mat(test, truth = Payment.Status, estimate = test_pred_rf)
+```
+
+```{r summary metrics of random forest confusion matrix}
+dt_metrics <- metric_set(accuracy, sens, spec, precision, f_meas, kap)
+dt_metrics(test, truth = Payment.Status, estimate = test_pred_rf)
+```
+
+```{r Create confusion matrix for SVM}
+conf_mat(test, truth = Payment.Status, estimate = test_pred_svm)
+```
+
+
+```{r summary metrics of SVM confusion matrix}
+dt_metrics <- metric_set(accuracy, sens, spec, precision, f_meas, kap)
+dt_metrics(test, truth = Payment.Status, estimate = test_pred_svm)
+```
+
+The three methods generate fairly similar results, thought the Support Vector Machine algorithm generates a bit better result and will be fine tuned.
+
+### Improving the Support Vector Machine algorithm
+
+```{r Tune svm model}
+obj <- tune.svm(Payment.Status~., data = train,
+                cost = c(1, 5, 10, 20, 100),
+                gamma = c(0.01, 0.1, 0.5, 1, 5, 10),
+                type = "C-classification",
+                kernel = "linear"); beepr::beep()
+summary(obj)
+```
+
+Once determined that better gamma = 0.01 and cost = 1 we run a tuned SVM model.
+
+```{r run tuned SVM model}
+new_classifier <- svm(formula = Payment.Status~.,
+                      data = train,
+                      cost = 100,
+                      gamma = 0.01,
+                      type = "C-classification",
+                      kernel = "linear"); beepr::beep()
+```
+
+```{r get classifier summary}
+summary(new_classifier)
+```
+
+```{r fourth prediction on new svm model}
+test$test_pred_svm <- predict(new_classifier, test)
+test
+test[ ,13:14]
+```
+
+```{r Create confusion matrix}
+conf_mat(test, truth = Payment.Status, estimate = test_pred_svm)
+```
+
+```{r Get summary metrics}
+svm_metrics <- metric_set(accuracy, sens, spec, precision, f_meas, kap)
+svm_metrics(test, truth = Payment.Status, estimate = test_pred_svm)
+```
+
+### Improving the Support Vector Machine with sigmoid kernel.
+
+```{r Tune svm model with sigmoid kernel}
+objsigmoid <- tune.svm(Payment.Status~., data = train,
+                       cost = c(1, 5, 10, 20, 100),
+                       gamma = c(0.01, 0.1, 0.5, 1, 5, 10),
+                       type = "C-classification",
+                       kernel = "sigmoid"); beepr::beep()
+summary(objsigmoid)
+```
+
+Support Vector Machine algorithm with sigmoid kernel did not improve the linear kernel, no changes to do.
+
+## Cluster Analysis
+
+Will try three algorithms.
+k-means: Is a nonlinear algorithm, clusters based on similarity and similar groups. Assigns each data point to nearest centroid. Specify number of clusters. Will use cluster number methods: WSS/elbow and silhouette.
+Hierarchical: Nonlinear model, creates a hierarchy with the data. Visualized with dendrogram.
+GMM Gaussian Mixture Model: Probabilistic model, assigns data points to cluster with highest probability.
+
+### Preparing for clustering
+
+```{r get subset of data}
+set.seed(42)
+sales_subset <- subset(sales, select = c(Employee.Job.Title, Sales.Region, OrderMonth, OrderYear, OrderType, CustomerType, CustState, ProdCategory, Quantity, Price, Discount, Order.Total, Payment.Plan, Payment.Status))
+```
+
+```{r remove null values}
+sales_subset <- na.omit(sales_subset)
+summary(sales_subset)
+```
+
+```{r encode dummy variables}
+dummy_var <- dummyVars("~ .", data = sales_subset)
+trsf <- data.frame(predict(dummy_var, newdata = sales_subset))
+trsf
+```
+
+```{r normalize data}
+trsf.pre <- preProcess(trsf, method = "range")
+scaled_data <- predict(trsf.pre, trsf)
+summary(scaled_data)
+```
+
+### Run k-means algorithm
+
+```{r determine number of cluster based on wss}
+fviz_nbclust(scaled_data, kmeans, method = "wss"); beepr::beep()
+```
+
+First elbow appears with 2 k clusters, we will use 2.
+
+```{r first determine number of clusters based on average silhouette}
+fviz_nbclust(scaled_data, kmeans, method = "silhouette"); beepr::beep()
+```
+
+```{r run k-means algorith}
+km <- kmeans(scaled_data, centers = 2, nstart = 25)
+km
+```
+
+```{r get total within-cluster sum of squares}
+km$totss
+```
+
+```{r get between-cluster sum of squares}
+km$betweenss
+```
+
+```{r get silhouette score}
+fviz_silhouette(silhouette(km$cluster, dist(scaled_data))); beepr::beep()
+```
+
+### Run a hierarchical clustering algorithm
+
+```{r create distance matrix}
+distance_mat <- dist(scaled_data, method = "euclidean")
+```
+
+```{r fit hierarchical clustering model}
+hierar_cl <- hclust(distance_mat, method = "average")
+hierar_cl
+```
+
+```{r plot dendrogram, fig.width=12, fig.height=10}
+plot(hierar_cl)
+abline(h = 4, col = "red")
+```
+
+Too many data points generate a messy graph.
+
+```{r cut tree into clusters}
+sub_grp <- cutree(hierar_cl, k = 2)
+table(sub_grp)
+```
+
+```{r plot dendrogram for the number of clusters, fig.width=12, fig.height=10}
+plot(hierar_cl)
+rect.hclust(hierar_cl, k = 2)
+```
+
+```{r Determina silhouette score, fig.width=10, fig.height=8}
+plot(silhouette(cutree(hierar_cl, k = 2), distance_mat, border = NA))
+```
+
+### Run GMM clustering algorithm
+
+```{r find optimal number of clusters based on BIC}
+opt_gmm <- Optimal_Clusters_GMM(scaled_data, max_clusters = 10, criterion = "BIC",
+                                dist_mode = "eucl_dist", plot_data = TRUE)
+```
+Following the elbow criteria we will use 3 clusters.
+
+```{r find optimal number of clusters based on AIC}
+opt_gmm <- Optimal_Clusters_GMM(scaled_data, max_clusters = 10, criterion = "AIC",
+                                dist_mode = "eucl_dist", plot_data = TRUE)
+```
+
+```{r run GMM model for selected number of clusters}
+gmm <- GMM(scaled_data, 3, dist_mode = "eucl_dist")
+gmm
+```
+
+```{r predict clusters}
+gmm_cluster <- predict(gmm, newdata = scaled_data)
+gmm_cluster
+```
+
+```{r transform the gmm_cluster variable into a list}
+dt <- data.table::as.data.table(gmm_cluster, .keep.rownames = "word")
+typeof(dt)
+```
+
+```{r first add cluster column to final dataset}
+final_data <- cbind(scaled_data, cluster = dt)
+final_data
+```
+
+```{r look at cluster sizes}
+table(final_data$gmm_cluster)
+```
+
+```{r determine silhouette score}
+fviz_silhouette(silhouette(final_data$gmm_cluster, dist(scaled_data))); beepr::beep()
+```
+
+### Evaluating cluster results
+
+We will evaluate the k-means clusters as this algorithm had the best results so far.
+
+```{r second add cluster column to final dataset}
+final_data <- cbind(sales, cluster = km$cluster)
+final_data
+```
+
+```{r summarize data}
+final_data |> group_by(cluster) |> 
+    summarise(across(everything(), list(mean)))
+```
+
+```{r evaluate categorical variables}
+table(final_data$cluster, final_data$Payment.Status)
+```
+
+```{r add column to scaled dataset}
+final_scaled_data <- cbind(scaled_data, cluster = km$cluster)
+final_scaled_data
+```
+
+```{r first summarize data all numerically}
+final_scaled_data  |>  group_by(cluster) |> 
+    summarise(across(everything(), list(mean)))
+```
+
+### Clustering late payment customers
+
+```{r Filter data to late payment status only}
+sales <- sales[sales$Payment.Status == "Late", ]
+summary(sales)
+```
+
+```{r prepare the data}
+set.seed(42)
+sales_subset <- subset(sales, select = c(Employee.Job.Title, Sales.Region, OrderMonth, OrderYear, OrderType, CustomerType, CustState, ProdCategory, Quantity, Price, Discount, Order.Total))
+sales_subset <- na.omit(sales_subset)
+dmy <- dummyVars("~.", data = sales_subset)
+trsf <- data.frame(predict(dmy, newdata = sales_subset))
+trsf.pre <- preProcess(trsf, method = "range")
+scaled_data <- predict(trsf.pre, trsf)
+
+```
+
+```{r Determine number lf cluster based on wss}
+fviz_nbclust(scaled_data, kmeans, method = "wss")
+```
+
+Will use 2 clusters.
+
+```{r second determine number of clusters based on average silhouette}
+fviz_nbclust(scaled_data, kmeans, method = "silhouette")
+```
+
+```{r run k-means algorithm for the 2 clusters}
+km <- kmeans(scaled_data, centers = 2, nstart = 25)
+km
+```
+
+```{r get silhoutte score}
+sil <- silhouette(km$cluster, dist(scaled_data))
+fviz_silhouette(sil)
+```
+
+```{r third add cluster column to dataset}
+final_data <- cbind(sales, cluster = km$cluster)
+final_data
+```
+
+```{r evaluate Sales.Region by cluster}
+table(final_data$cluster, final_data$Sales.Region)
+```
+
+```{r add column to scales dataset}
+final_scaled_data <- cbind(scaled_data, cluster = km$cluster)
+final_scaled_data <- as.data.frame(final_scaled_data)
+final_scaled_data
+```
+
+```{r second summarize data all numerically}
+final_scaled_data |> group_by(cluster) |> 
+    summarise(across(everything(), list(mean)));beepr::beep()
+```
+
