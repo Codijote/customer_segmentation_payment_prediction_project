@@ -12,7 +12,7 @@ Perform a Exploratory Data Analysis (EDA) on customers, to help better understan
 
 # Processes executed:
 
-The executed processes on the data are not limited but at least:
+The executed processes on the data include but are not limited to:
 
 Exploratory Data Analysis EDA.
 Preliminar visualization of the data.
