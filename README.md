@@ -1,7 +1,7 @@
 Project in R using,
 
 Exploratory Data Analysis EDA.
-Preliminar visualization of the data.
+Preliminary visualization of the data.
 Supervised learning.
 Classification Analysis and prediction modelling of the payment status.
 Unsupervised learning.
@@ -17,3 +17,5 @@ Aprendizaje supervisado.
 Analisis de clasificación y modelado de datos para predicción del estado de pago.
 Aprendizaje no supervisado.
 Analisis de clusters de la segmentación de clientes y predicción de pago.
+
+Pronto estará disponible en espanol.
