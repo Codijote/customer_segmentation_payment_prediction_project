@@ -3,7 +3,6 @@ title: "Customers segmentation and payment prediction project"
 author: "Daniel Navarro"
 date: "2025-05-26"
 output: html_document
-toc: True
 ---
 
 # Goal:
@@ -12,22 +11,43 @@ Perform a Exploratory Data Analysis (EDA) on customers, to help better understan
 
 # Processes executed:
 
-The executed processes on the data include but are not limited to:
+The executed processes on the data are not limited but at least:
 
 Exploratory Data Analysis EDA.
 Preliminar visualization of the data.
+Supervised learning.
 Classification Analysis and prediction modelling of the payment status.
+Unsupervised learning.
 Cluster Analysis of customer segmentation and payment prediction.
+
+# Conclusions:
+
+Decision tree, random forest and support vector machine algorithm were used to model the classification of the payment status of the customers. Results were fairly similar with the support vector machine obtaining a small better accuracy of 0.7130225 estimate.
+
+Support vector machine (SVM) was fine tuned in the search for a better prediction level, the result provide not a significant improvement.
+
+A cluster analysis was performed on the data in the search for notable patterns and clusters of payment status of the partners.
+
+Three methods of non-supervised learning were used: k-means, hierarchical clustering and GMM clustering algorithms. 
+
+Due to the nature of the data a cluster dendrogram obtained from a hierarchical clustering algorithm was too complex and did not provide useful insights of the data, business opinion or domain knowledge could be needed for a precision of the variables to consider.
+
+The best results were obtained with the k-means cluster algorithm. Both clusters resulted of a combination of several variables and no 1 to 1 relation between one variable and one cluster was found.
+
+The best distintive variable of the clusters is the type of customer, all customers in cluster 2 are business customers, while almost all in cluster 1 are individual customers.
+
+TODO.
+
+More tests of classification and regression algorithms can be done to look for a higher prediction capability. 
 
 # Needed libraries:
 
-For reproduction of this project the following libraries will be needed, beepr, caret, cluster, ClusterR, data.table, dplyr, e1071, ggplot2, lattice, factoextra, openxlsx, ranger, recipes, rpart, rpart.plot, tidymodels.
+For reproduction of this project the following libraries will be needed, caret, cluster, ClusterR, data.table, dplyr, e1071, ggplot2, lattice, factoextra, openxlsx, ranger, recipes, rpart, rpart.plot, tidymodels.
 
 # Exploring customer data
 
-```{r installation of required packages if not present, echo=FALSE}
+```{r installation of required packages if not present, include=FALSE}
 suppressPackageStartupMessages({
-    if (!require(beepr)) install.packages('beepr')
     if (!require(caret)) install.packages('caret')
     if (!require(cluster)) install.packages('cluster')
     if (!require(ClusterR)) install.packages('ClusterR')
@@ -43,11 +63,13 @@ suppressPackageStartupMessages({
     if (!require(rpart)) install.packages("rpart")
     if (!require(rpart.plot)) install.packages("rpart.plot")
     if (!require(tidymodels)) install.packages("tidymodels")
+    if (!require(workflows)) install.packages("workflows")
 })
 ```
 
-```{r load red30 Tech Sales data}
-sales <- openxlsx::read.xlsx("data/Red30 Tech Sales.xlsx", 1, detectDates = TRUE)
+
+```{r load red30 Tech Sales data, include = FALSE}
+sales <- read.xlsx("data/Red30 Tech Sales.xlsx", 1, detectDates = TRUE)
 ```
 
 ```{r}
@@ -104,8 +126,8 @@ prop.table(table(sales$CustomerType))
 
 ```{r average sales and quantity by customer type}
 sales |> group_by(CustomerType) |> 
-    summarise(mean_sales = mean(Order.Total),
-              mean_quantity = mean(Quantity))
+    summarise(mean_sales = round(mean(Order.Total), 2),
+              mean_quantity = round(mean(Quantity), 2))
 ```
 
 ```{r total sales and quantity by customer type}
@@ -118,13 +140,14 @@ sales |> group_by(CustomerType) |>
 sales |> count(CustState, sort = TRUE)
 ```
 
-```{r first review product categories sold by customer type}
+```{r first review product categories sold by customer type, warning=FALSE}
 table(sales$CustomerType, sales$ProdCategory)
 ```
 
 ```{r second sort data by order total}
 sales[order(sales$Order.Total, decreasing = TRUE), ]
 ```
+
 ```{r second sort data by order quantity}
 sales[order(sales$Quantity, decreasing = TRUE), ]
 ```
@@ -205,10 +228,10 @@ sales |> group_by(ProdCategory) |>
               mean_Qty = mean(Quantity)) |> 
     arrange(desc(mean_Qty))
 
-sales |> group_by(ProdCategory) |> 
-    summarise(mean_sales = mean(Order.Total),
-              mean_Qty = mean(Quantity)) |> 
-    arrange(desc(mean_Qty))
+# sales |> group_by(ProdCategory) |> 
+#     summarise(mean_sales = mean(Order.Total),
+#               mean_Qty = mean(Quantity)) |> 
+#     arrange(desc(mean_Qty))
 ```
 
 ```{r total sales and quantity by product category}
@@ -236,8 +259,8 @@ table(sales$ProdCategory, sales$CustomerType)
 1. Count how many customers there are in each year of when they were added to the system desc order.
 2. Evaluate when customers where added by the state they reside in.
 
-```{r Customer Longevity Analysis}
-sales |> group_by(DateCustAdded) |> 
+```{r Customer Longevity Analysis table and plot}
+sales |> group_by(DateCustAdded) |>
     count(DateCustAdded)
 
 plot(sales |> group_by(DateCustAdded) |> 
@@ -259,22 +282,23 @@ sales[order(sales$DateCustAdded, decreasing = TRUE), ]
 sales[order(sales$DateCustAdded, decreasing = FALSE), ]
 ```
 
-```{r determining years of customers loyalty}
+```{r Histogram of customers loyalty by years}
 plot <- sales |> 
     mutate(Loyalty_Years = as.integer((year(Sys.time())) - (DateCustAdded))) |> 
     select(DateCustAdded, Loyalty_Years) |> 
     arrange(desc(Loyalty_Years))
 
 hist(plot$Loyalty_Years)
+rm(plot)
 ```
 
 # Classification Analysis
 
-Understand relationship between input and output variables, learn patterns and predict results.
+The goal is to search, if any, and understand the relationships between input and output variables, learn patterns and predict results.
 
 Will use Decision Trees, Random Forests and Support Vector Machines (SVMs).
 
-## Goal
+## Objective
 
 Predict customer's payment status.
 
@@ -295,7 +319,9 @@ sales$Payment.Status <- as.factor(sales$Payment.Status)
 ```
 
 ```{r get subset of sales data}
-sales_subset <- subset(sales, select = c(Employee.Job.Title, Sales.Region, OrderMonth, OrderYear, OrderType, CustomerType, CustState, Quantity, Price, Discount, Order.Total, Payment.Plan, Payment.Status))
+# sales_subset <- subset(sales, select = c(Employee.Job.Title, Sales.Region, OrderMonth, OrderYear, OrderType, CustomerType, CustState, Quantity, Price, Discount, Order.Total, Payment.Plan, Payment.Status))
+
+sales_subset <- subset(sales, select = c(Employee.Job.Title, Sales.Region, OrderMonth, OrderYear, OrderType, CustomerType, ProdCategory, Quantity, Price, Discount, Order.Total, Payment.Plan, Payment.Status))
 ```
 
 ```{r split train and test data}
@@ -340,7 +366,7 @@ test <- cbind(test, predResults)
 test
 ```
 
-```{r plot decision tree, fig.width= 17, fig.height= 7}
+```{r plot decision tree, fig.width= 25, fig.height= 14}
 fit <- rpart(Payment.Status~., data = train, method = "class")
 rpart.plot(fit, tweak = 1.5)
 ```
@@ -389,9 +415,9 @@ test$test_pred_svm <- predict(classifier, test)
 test
 ```
 
-### Understanding summary metrics
+### Summary metrics
 
-Confusion Matrix:
+Confusion Matrix (Parameters):
 Sensitivity: How many values are correctly identified as positive that are actually positive. (TP / FN + TP)
 Specificity: How many values are correctly identified as negative that are actually negative. (TN / FP + TN)
 Precision: How many positive values are actually positive. (TP / TP + FP)
@@ -431,7 +457,7 @@ dt_metrics <- metric_set(accuracy, sens, spec, precision, f_meas, kap)
 dt_metrics(test, truth = Payment.Status, estimate = test_pred_svm)
 ```
 
-The three methods generate fairly similar results, thought the Support Vector Machine algorithm generates a bit better result and will be fine tuned.
+The three methods generate fairly similar results, thought the Support Vector Machine algorithm generates a bit better result and will be,consequently, fine tuned.
 
 ### Improving the Support Vector Machine algorithm
 
@@ -440,7 +466,7 @@ obj <- tune.svm(Payment.Status~., data = train,
                 cost = c(1, 5, 10, 20, 100),
                 gamma = c(0.01, 0.1, 0.5, 1, 5, 10),
                 type = "C-classification",
-                kernel = "linear"); beepr::beep()
+                kernel = "linear")
 summary(obj)
 ```
 
@@ -452,7 +478,7 @@ new_classifier <- svm(formula = Payment.Status~.,
                       cost = 100,
                       gamma = 0.01,
                       type = "C-classification",
-                      kernel = "linear"); beepr::beep()
+                      kernel = "linear")
 ```
 
 ```{r get classifier summary}
@@ -481,7 +507,7 @@ objsigmoid <- tune.svm(Payment.Status~., data = train,
                        cost = c(1, 5, 10, 20, 100),
                        gamma = c(0.01, 0.1, 0.5, 1, 5, 10),
                        type = "C-classification",
-                       kernel = "sigmoid"); beepr::beep()
+                       kernel = "sigmoid")
 summary(objsigmoid)
 ```
 
@@ -494,7 +520,7 @@ k-means: Is a nonlinear algorithm, clusters based on similarity and similar grou
 Hierarchical: Nonlinear model, creates a hierarchy with the data. Visualized with dendrogram.
 GMM Gaussian Mixture Model: Probabilistic model, assigns data points to cluster with highest probability.
 
-### Preparing for clustering
+### Preparing data for clustering
 
 ```{r get subset of data}
 set.seed(42)
@@ -521,13 +547,13 @@ summary(scaled_data)
 ### Run k-means algorithm
 
 ```{r determine number of cluster based on wss}
-fviz_nbclust(scaled_data, kmeans, method = "wss"); beepr::beep()
+fviz_nbclust(scaled_data, kmeans, method = "wss")
 ```
 
-First elbow appears with 2 k clusters, we will use 2.
+First elbow appears with 2 k clusters, we will use 2 clusters for the model.
 
 ```{r first determine number of clusters based on average silhouette}
-fviz_nbclust(scaled_data, kmeans, method = "silhouette"); beepr::beep()
+fviz_nbclust(scaled_data, kmeans, method = "silhouette")
 ```
 
 ```{r run k-means algorith}
@@ -544,7 +570,7 @@ km$betweenss
 ```
 
 ```{r get silhouette score}
-fviz_silhouette(silhouette(km$cluster, dist(scaled_data))); beepr::beep()
+fviz_silhouette(silhouette(km$cluster, dist(scaled_data)))
 ```
 
 ### Run a hierarchical clustering algorithm
@@ -603,7 +629,7 @@ gmm_cluster
 ```
 
 ```{r transform the gmm_cluster variable into a list}
-dt <- data.table::as.data.table(gmm_cluster, .keep.rownames = "word")
+dt <- as.data.table(gmm_cluster, .keep.rownames = "word")
 typeof(dt)
 ```
 
@@ -617,7 +643,7 @@ table(final_data$gmm_cluster)
 ```
 
 ```{r determine silhouette score}
-fviz_silhouette(silhouette(final_data$gmm_cluster, dist(scaled_data))); beepr::beep()
+fviz_silhouette(silhouette(final_data$gmm_cluster, dist(scaled_data)))
 ```
 
 ### Evaluating cluster results
@@ -703,6 +729,14 @@ final_scaled_data
 
 ```{r second summarize data all numerically}
 final_scaled_data |> group_by(cluster) |> 
-    summarise(across(everything(), list(mean)));beepr::beep()
+    summarise(across(everything(), list(mean)))
+```
+
+## Identifying uniquenes of the clusters.
+
+Both clusters are mostly composed of a combination of the other variables of the data, the most unique factor being the type of customer where all customers of cluster 2 are business customers while 184 of 188 customers of cluster 1 are individual customers.
+
+```{r table of customer's type by cluster}
+table(final_data$CustomerType, final_data$cluster)
 ```
 
