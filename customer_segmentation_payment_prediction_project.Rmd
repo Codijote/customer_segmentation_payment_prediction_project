@@ -14,7 +14,7 @@ Perform a Exploratory Data Analysis (EDA) on customers, to help better understan
 The executed processes on the data are not limited but at least:
 
 Exploratory Data Analysis EDA.
-Preliminar visualization of the data.
+Preliminary visualization of the data.
 Supervised learning.
 Classification Analysis and prediction modelling of the payment status.
 Unsupervised learning.
