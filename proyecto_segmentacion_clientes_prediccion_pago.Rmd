@@ -1,0 +1,738 @@
+---
+title: "Proyecto de Segmentación de clientes y Predicción de pagos - Versión en Español"
+author: "Daniel Navarro"
+date: "2025-06-10"
+output: html_document
+---
+
+# Objetivo:
+
+Realizar un análisis exploratorio de los datos de los clientes, ayudar a comprender mejor la segmentación de clientes subyacente en los datos, y al mismo tiempo evaluar cuales clientes están pagando sus facturas en tiempo y predecir el estado de sus pagos.
+
+# Procesos realizados:
+
+Los procesos que se ejecutaron sobre los datos incluyen, pero no están limitados a:
+
+Análisis exploratorio de los datos (EDA - Exploratory Data Analysis)
+Visualización preliminar de datos.
+Aprendizaje supervisado:
+Análisis de clasificación y modelado, predicción del estado de pagos.
+Aprendizaje no supervizado:
+Análisis de grupos (Cluster Analysis) y predicción de pagos.
+
+# Conclusiones:
+
+Para el modelado de la clasificación del estado de pagos de los clientes se utilizó los algoritmos de árbol de decisión, bosques aleatorios (Random Forest) y máquina de vectores de soporte (SVM - Support Vector Machine).
+
+La máquina de vectores de soporte se refinó en busca de mejores niveles de predicción, el refinamiento no produjo una mejora significativa.
+
+Se realizó un análisis de grupos de los datos en busca de patrones notables y grupos de estado de pago de los clientes.
+
+Se utilizó tres métodos de aprendizaje no supervisado: k-medias, agrupado de jerarquías y método de agrupamiento Gaussiano.
+
+Debido a la naturaleza de los datos el gráfico de grupos de dendrograma obtenido del agrupado de jerarquías resultó demasiado complejo para proveer una perspectiva de los datos, se podría necesitar conocimiento del área u opinión de otros departamentos para precisar qué variables utilizar.
+
+El mejor resultado se obtuvo con el algoritmo de agrupamiento de k-medias. Ambos grupos resultan ser una combinación de múltiples variables y no hay una relación uno a uno.
+
+La variable más distintiva para el agrupamiento resultó ser tipo de clientes, los clientes del grupo 2 son clientes corporativos, en tanto que los clientes del grupo 1 son clientes individuales.
+
+Pendiente por hacer.
+Aún se puede realizar otras pruebas de classificación y generar algoritmos de regresión en buscar de mayores niveles de capacidad de predicción.
+
+# Librerías necesarias:
+
+Para la reproducción de este proyecto se necesitará de las siguientes librerías: caret, cluster, ClusterR, data.table, dplyr, e1071, ggplot2, lattice, factoextra, openxlsx, ranger, recipes, rpart, rpart.plot, tidymodels.
+
+# Explorando los datos de los clientes
+
+```{r instalacion de paquetes necesarios si no estan ya instalados, include=FALSE}
+suppressPackageStartupMessages({
+    if (!require(caret)) install.packages('caret')
+    if (!require(cluster)) install.packages('cluster')
+    if (!require(ClusterR)) install.packages('ClusterR')
+    if (!require(data.table)) install.packages('data.table')
+    if (!require(dplyr)) install.packages('dplyr')
+    if (!require(e1071)) install.packages('e1071')
+    if (!require(ggplot2)) install.packages('ggplot2')
+    if (!require(lattice)) install.packages('lattice')
+    if (!require(factoextra)) install.packages('factoextra')
+    if (!require(openxlsx)) install.packages("openxlsx")
+    if (!require(ranger)) install.packages("ranger")
+    if (!require(recipes)) install.packages("recipes")
+    if (!require(rpart)) install.packages("rpart")
+    if (!require(rpart.plot)) install.packages("rpart.plot")
+    if (!require(tidymodels)) install.packages("tidymodels")
+    if (!require(workflows)) install.packages("workflows")
+})
+```
+
+
+```{r carga de red30 Tech Sales data, include = FALSE}
+sales <- read.xlsx("data/Red30 Tech Sales.xlsx", 1, detectDates = TRUE)
+```
+
+```{r primer resumen de los datos}
+summary(sales)
+```
+
+```{r resumen concentrado de las ventas}
+summary(sales[ ,c('Quantity', 'Price', 'Discount', 'Order.Total')])
+```
+
+```{r numero de clientes por estado de pago}
+table(sales$Payment.Status)
+```
+
+```{r proporcion de clientes por estado de pagos}
+prop.table(table(sales$Payment.Status))
+```
+
+```{r obtener el total de ordenes por plan de pago}
+table(sales$Payment.Plan)
+proportions(table(sales$Payment.Plan))
+```
+
+```{r chequeo de valores nulos en las ventas}
+is.null(sales)
+sum(is.null(sales))
+```
+
+## Determinar cuáles clientes realizan las compras de mayor monto en dólares
+
+```{r primer orden de datos por total de la orden}
+# sales |> arrange(Order.Total)
+sales[order(sales$Order.Total, decreasing = TRUE), ]
+```
+
+```{r primer orden de los datos por cantidad ordenada}
+sales[order(sales$Quantity, decreasing = TRUE), ]
+```
+
+```{r obtener el numero de clientes por estado}
+data_mod <- sales[order(sales$Order.Total, decreasing = TRUE), ]
+data_mod <- data.table(data_mod, key = 'CustState')
+data_mod <- data_mod[, head(.SD, 1), by = CustState]
+```
+
+```{r listar los mejores clientes por numero total de ordenes}
+sales |> count(CustName, sort = TRUE)
+```
+
+```{r obtener los clientes por tipo de cliente y numero total de ordenes}
+table(sales$CustomerType)
+prop.table(table(sales$CustomerType))
+```
+
+```{r ventas y cantidades medias segun tipo de cliente}
+sales |> group_by(CustomerType) |> 
+    summarise(mean_sales = round(mean(Order.Total), 2),
+              mean_quantity = round(mean(Quantity), 2))
+```
+
+```{r ventas y cantidades totales segun tipo de cliente}
+sales |> group_by(CustomerType) |> 
+    summarise(Total_sales = sum(Order.Total),
+              total_quantity = sum(Quantity))
+```
+
+```{r listar el numero de los mejores clientes por estado segun el total del numero de ordenes}
+sales |> count(CustState, sort = TRUE)
+```
+
+```{r primera revision de las categorias de productos vendidos por tipo de cliente, warning=FALSE}
+table(sales$CustomerType, sales$ProdCategory)
+```
+
+```{r segunda ordenacion de los datos por total de las ordenes}
+sales[order(sales$Order.Total, decreasing = TRUE), ]
+```
+
+```{r segunda ordenacion de datos segun cantidad de ordenada}
+sales[order(sales$Quantity, decreasing = TRUE), ]
+```
+
+```{r obtener los mejores empleados segun el total de ordenes logradas}
+# sales |> group_by(Employee.Name) |> 
+    # summarise(Orders = sum(Quantity))
+sales |> count(Employee.Name, sort = TRUE)
+```
+
+```{r obtener el numero de empleados segun su posicion}
+sales |> count(Employee.Job.Title, sort = TRUE)
+```
+
+```{r Revision de los titulos de los empleos}
+table(sales$Employee.Job.Title)
+round(proportions((table(sales$Employee.Job.Title))), 4) * 100
+```
+
+```{r revision de empleados de ventas por region}
+table(sales$Sales.Region)
+barplot(
+round(proportions(table(sales$Sales.Region)), 4) * 100
+)
+round(proportions(table(sales$Sales.Region)), 4) * 100
+```
+
+```{r montos y cantidades medias vendidas segun el nivel de vendedores}
+sales |> group_by(Employee.Job.Title) |> 
+    summarise(mean_sales_USD = round(mean(Order.Total), 2),
+              mean_Qty = round(mean(Quantity)))
+```
+
+```{r montos y cantidades totales vendidas segun el nivel de vendedores}
+sales |> group_by(Employee.Job.Title) |> 
+    summarise(total_sales_USD = sum(Order.Total),
+              total_Qty = sum(Quantity))
+```
+
+```{r revisar las categorías de productos según el nivel de los vendedores}
+table(sales$Employee.Job.Title, sales$ProdCategory)
+round(proportions(table(sales$Employee.Job.Title, sales$ProdCategory)) * 100, 2)
+```
+
+```{r revisar la distribución regional segun el nivel de los vendedores}
+table(sales$Employee.Job.Title, sales$Sales.Region)
+```
+
+## Como determinar la mejor categoría de produtos
+
+```{r ordenar los datos segun total de las ordenes}
+sales[order(sales$Order.Total, decreasing = TRUE), ]
+```
+
+```{r ordenar los datos segun la cantidad ordenada}
+sales[order(sales$Quantity, decreasing = TRUE), ]
+```
+
+```{r obtener los mejores productos segun el numero total de ordenes}
+sales |> count(ProdName, sort = TRUE)
+```
+
+```{r obtener las mejores categorias de productos segun el numero total de ordenes}
+sales |> count(ProdCategory, sort = TRUE)
+```
+
+```{r revisando las proporciones segun categoria de los productos}
+# proportions(table(sales$ProdCategory)) # same information
+round(prop.table(
+    table(
+        sales$ProdCategory
+    )) * 100, 2)
+```
+
+```{r ventas y cantidades medias segun categoria}
+sales |> group_by(ProdCategory) |> 
+    summarise(mean_sales = mean(Order.Total),
+              mean_Qty = mean(Quantity)) |> 
+    arrange(desc(mean_Qty))
+
+# sales |> group_by(ProdCategory) |> 
+#     summarise(mean_sales = mean(Order.Total),
+#               mean_Qty = mean(Quantity)) |> 
+#     arrange(desc(mean_Qty))
+```
+
+```{r ventas y cantidades totales segun categoria de producto}
+sales |> group_by(ProdCategory) |> 
+    summarise(total_sales = sum(Order.Total),
+              total_Qty = sum(Quantity)) |> 
+    arrange(desc(total_sales))
+    
+```
+
+```{r revisar las categorias de productos vendidas en cada region}
+table(sales$ProdCategory, sales$Sales.Region)
+```
+
+```{r revisar las categorias de productos segun el tipo de ordenes}
+table(sales$ProdCategory, sales$OrderType)
+```
+
+```{r revisar las categorias de productos vendidos segun el tipo de cliente}
+table(sales$ProdCategory, sales$CustomerType)
+```
+
+## Análisis de la longevidad de los clientes
+
+1. Contar cuántos clientes hay por año de registro en orden descendente.
+2. Evaluar cuándo fueron registrados según el estado de residencia.
+
+```{r análisis de lealtad de los clientes tabla y gráfico}
+sales |> group_by(DateCustAdded) |>
+    count(DateCustAdded)
+
+plot(sales |> group_by(DateCustAdded) |> 
+            count(DateCustAdded))
+
+```
+
+```{r Evaluar cuándo fueron registrados los clientes segun estado en que residen}
+table(sales$DateCustAdded, sales$CustState)
+```
+
+```{r}
+sales |> count(DateCustAdded, sort = TRUE)
+
+table(sales$CustState, sales$DateCustAdded)
+
+sales[order(sales$DateCustAdded, decreasing = TRUE), ]
+
+sales[order(sales$DateCustAdded, decreasing = FALSE), ]
+```
+
+```{r Histograma de lealtad de los clientes por año}
+plot <- sales |> 
+    mutate(Loyalty_Years = as.integer((year(Sys.time())) - (DateCustAdded))) |> 
+    select(DateCustAdded, Loyalty_Years) |> 
+    arrange(desc(Loyalty_Years))
+
+hist(plot$Loyalty_Years)
+rm(plot)
+```
+
+# Análisis de clasificación
+
+La meta es encontrar, si existe, y entender las relaciones entre variables, identificar patrones y predecir resultados.
+
+Se utilizará el árbol de decisiones, bosques aleatorios y máquinas de vectores de soporte.
+
+## Objetivo
+
+Predecis el estado de pago de los clientes.
+
+### Preparando los datos para la clasificación
+
+```{r Obtener el mes de orden}
+sales$OrderMonth <- format(sales$OrderDate, "%B")
+summary(sales)
+```
+
+```{r obtener el año de la orden}
+sales$OrderYear <- format(sales$OrderDate, "%Y")
+summary(sales$OrderYear)
+```
+
+```{r factorizar el estado de los pagos}
+sales$Payment.Status <- as.factor(sales$Payment.Status)
+```
+
+```{r obtener un subgrupo de los datos de ventas}
+# sales_subset <- subset(sales, select = c(Employee.Job.Title, Sales.Region, OrderMonth, OrderYear, OrderType, CustomerType, CustState, Quantity, Price, Discount, Order.Total, Payment.Plan, Payment.Status))
+
+sales_subset <- subset(sales, select = c(Employee.Job.Title, Sales.Region, OrderMonth, OrderYear, OrderType, CustomerType, ProdCategory, Quantity, Price, Discount, Order.Total, Payment.Plan, Payment.Status))
+```
+
+```{r separar los datos de entrenamiento y prueba}
+set.seed(42)
+bound <- floor((nrow(sales_subset) / 4)*3)
+
+df <- sales_subset[sample(nrow(sales_subset)), ]
+train <- df[1:bound, ]
+test <- df[(bound + 1):nrow(df), ]
+summary(train)
+summary(test)
+```
+
+### Ejecutando el algoritmo de árbol de decisiones
+
+```{r Crear el modelo de árbol de decisiones}
+tree <- decision_tree() |> 
+    set_engine("rpart") |> 
+    set_mode("classification")
+```
+
+```{r Crear la receta}
+df_recipe <- recipe(Payment.Status~ ., data = df) |>
+    step_normalize(all_numeric())
+```
+
+```{r Crear el plan del árbol de decisiones}
+tree_wf <- workflow() |> 
+    add_recipe(df_recipe) |> 
+    add_model(tree) |> 
+    fit(train)
+```
+
+```{r Resumen de tree_wf}
+summary(tree_wf)
+```
+
+```{r primera prediccion del modelo}
+predResults <- data.frame(predict(tree_wf, test))
+colnames(predResults) <- c("test_pred_tree")
+test <- cbind(test, predResults)
+test
+```
+
+```{r graficando el árbol de decisiones, fig.width= 25, fig.height= 14}
+fit <- rpart(Payment.Status~., data = train, method = "class")
+rpart.plot(fit, tweak = 1.5)
+```
+
+### Ejecutar un algoritmo de bosque aleatorio
+
+```{r Crear el model del bosque aleatorio}
+ rf <- rand_forest() |> 
+    set_engine("ranger", importance = "impurity") |> 
+    set_mode("classification")
+```
+
+```{r Crear el plan de trabajo del bosque aleatorio}
+tree_rand_forest <- workflow() |> 
+    add_recipe(df_recipe) |> 
+    add_model(rf) |> 
+    fit(train)
+```
+
+```{r Obtener el resumen de tree_rand_forest}
+summary(tree_rand_forest)
+```
+
+```{r Segunda predicción del modelo}
+predResults <- data.frame(predict(tree_rand_forest, test))
+colnames(predResults) <- c("test_pred_rf")
+test <- cbind(test, predResults)
+test
+```
+
+### Ejecutar un algoritmo de máquina de vectores de soporte
+
+```{r Crear el modelo SVM}
+classifier <- svm(formula = Payment.Status~., 
+                  data = train,
+                  type = "C-classification",
+                  kernel = "linear")
+```
+
+```{r obtener el resumen del clasificador}
+summary(classifier)
+```
+
+```{r tercera predicción del modelo}
+test$test_pred_svm <- predict(classifier, test)
+test
+```
+
+### Medidas de resumen
+
+Sensibilidad: Cuantos valores indentificados como positivos son realmente positivos. (TP / FN + TP)
+Especificidad: Cuantos valores identificados como negativos son realmente negativos.  (TN / FP + TN)
+Precisión: Cuantos valores positivos son realmente positivos. (TP / TP + FP)
+
+### Escogiendo el mejor de los algoritmos
+
+```{r Revisando los datos de prueba}
+test
+test[ ,13:16]
+```
+
+```{r Crear una matriz de confusión para el árbol de decisiones}
+conf_mat(test, truth = Payment.Status, estimate = test_pred_tree)
+```
+
+```{r obtener resumen de mediciones de la matriz de confusión del árbol de decisiones}
+dt_metrics <- metric_set(accuracy, sens, spec, precision, f_meas, kap)
+dt_metrics(test, truth = Payment.Status, estimate = test_pred_tree)
+```
+
+```{r Crear una matriz de confusión para el bosque aleatorio}
+conf_mat(test, truth = Payment.Status, estimate = test_pred_rf)
+```
+
+```{r resumen de la matriz de confusión del bosque aleatorio}
+dt_metrics <- metric_set(accuracy, sens, spec, precision, f_meas, kap)
+dt_metrics(test, truth = Payment.Status, estimate = test_pred_rf)
+```
+
+```{r Crear una matriz de confusión del SVM}
+conf_mat(test, truth = Payment.Status, estimate = test_pred_svm)
+```
+
+
+```{r resumen de la matriz de confusión del SVM}
+dt_metrics <- metric_set(accuracy, sens, spec, precision, f_meas, kap)
+dt_metrics(test, truth = Payment.Status, estimate = test_pred_svm)
+```
+Los tres métodos generan resultados bastante similares, la máquina de vectores de soporte ha obtenido un resultamente ligéramente superior, en consecuencia, se realizará un ajuste.
+
+### Mejorando el algoritmo de la máquina de vectores de soporte
+
+```{r ajustar el modelo SVM}
+obj <- tune.svm(Payment.Status~., data = train,
+                cost = c(1, 5, 10, 20, 100),
+                gamma = c(0.01, 0.1, 0.5, 1, 5, 10),
+                type = "C-classification",
+                kernel = "linear")
+summary(obj)
+```
+
+Una vez determinados los valores óptimos de gamma = 0.01 y cost = 1 ejecutamos el modelo ajustado de SVM.
+
+```{r Ejecutar el modelo SVM ajustado}
+new_classifier <- svm(formula = Payment.Status~.,
+                      data = train,
+                      cost = 100,
+                      gamma = 0.01,
+                      type = "C-classification",
+                      kernel = "linear")
+```
+
+```{r obtener un resumen}
+summary(new_classifier)
+```
+
+```{r cuarta predicción con el modelo svm ajustado}
+test$test_pred_svm <- predict(new_classifier, test)
+test
+test[ ,13:14]
+```
+
+```{r Matriz de confusión del modelo svm ajustado}
+conf_mat(test, truth = Payment.Status, estimate = test_pred_svm)
+```
+
+```{r resumen}
+svm_metrics <- metric_set(accuracy, sens, spec, precision, f_meas, kap)
+svm_metrics(test, truth = Payment.Status, estimate = test_pred_svm)
+```
+
+### Mejorando la máquina de vectores de soporte con un kernel sigmoidal.
+
+```{r Ajustando el modelo svm con un kernel sigmoidal}
+objsigmoid <- tune.svm(Payment.Status~., data = train,
+                       cost = c(1, 5, 10, 20, 100),
+                       gamma = c(0.01, 0.1, 0.5, 1, 5, 10),
+                       type = "C-classification",
+                       kernel = "sigmoid")
+summary(objsigmoid)
+```
+
+El algoritmo de máquina de vectores de soporte con kernel sigmoidal no supera el kernel lineal, no hay cambios que hacer.
+
+## Análisis de grupos
+
+Se utilizará tres algoritmos.
+k-medias: Es un algoritmo no lineal, analiza las agrupaciones de elementos y de grupos. Asigna cada punto de dato en relación al centroide más cercano. Para especificar el número de grupos se utilizará los métodos de codo y silueta.
+Jerárquico: Es un modelo no lineal, crea jerarquías con los datos, será visualizado con un dendrograma.
+GMM o modelo de mezclas gaussianas: Es un modelo probabilístico, asigna los puntos de datos a grupos con la más alta probabilidad.
+
+### Preparar los datos para el análisis de grupos
+
+```{r Obtener un sub grupo de datos}
+set.seed(42)
+sales_subset <- subset(sales, select = c(Employee.Job.Title, Sales.Region, OrderMonth, OrderYear, OrderType, CustomerType, CustState, ProdCategory, Quantity, Price, Discount, Order.Total, Payment.Plan, Payment.Status))
+```
+
+```{r Remover los valores nulos si los hubiera}
+sales_subset <- na.omit(sales_subset)
+summary(sales_subset)
+```
+
+```{r generar las variables ficticias}
+dummy_var <- dummyVars("~ .", data = sales_subset)
+trsf <- data.frame(predict(dummy_var, newdata = sales_subset))
+trsf
+```
+
+```{r normalizar los datos}
+trsf.pre <- preProcess(trsf, method = "range")
+scaled_data <- predict(trsf.pre, trsf)
+summary(scaled_data)
+```
+
+### Ejecutar el algoritmo k-medias
+
+```{r determinar el número de grupos con el métido wss}
+fviz_nbclust(scaled_data, kmeans, method = "wss")
+```
+
+El primer codo aparece con 2 grupos, utilizaremos el modelo con 2 grupos.
+
+```{r primera determinación de grupos basado en la silueta media}
+fviz_nbclust(scaled_data, kmeans, method = "silhouette")
+```
+
+```{r ejecutar el algoritmo de k-medias}
+km <- kmeans(scaled_data, centers = 2, nstart = 25)
+km
+```
+
+```{r Total de la suma de cuadrados intra-grupos}
+km$totss
+```
+
+```{r suma de cuadrados entre grupos}
+km$betweenss
+```
+
+```{r índice de silueta}
+fviz_silhouette(silhouette(km$cluster, dist(scaled_data)))
+```
+
+### Ejecutar un algoritmode agrupación jerárquica
+
+```{r crear matriz de distancias}
+distance_mat <- dist(scaled_data, method = "euclidean")
+```
+
+```{r ajustar el modelo de agrupación jerárquica}
+hierar_cl <- hclust(distance_mat, method = "average")
+hierar_cl
+```
+
+```{r dendrograma, fig.width=12, fig.height=10}
+plot(hierar_cl)
+abline(h = 4, col = "red")
+```
+
+Demasiados puntos de agrupación generan un gráfico caótico
+
+```{r cortando el árbol en grupos}
+sub_grp <- cutree(hierar_cl, k = 2)
+table(sub_grp)
+```
+
+```{r dendrograma para el número de grupos, fig.width=12, fig.height=10}
+plot(hierar_cl)
+rect.hclust(hierar_cl, k = 2)
+```
+
+```{r segundo índice de silueta, fig.width=10, fig.height=8}
+plot(silhouette(cutree(hierar_cl, k = 2), distance_mat, border = NA))
+```
+
+### Ejecutar algoritmo de agrupación GMM
+
+```{r encontrar el número óptimo de grupos basado en BIC}
+opt_gmm <- Optimal_Clusters_GMM(scaled_data, max_clusters = 10, criterion = "BIC",
+                                dist_mode = "eucl_dist", plot_data = TRUE)
+```
+Siguiendo el criterio de codos se utilizará 3 grupos.
+
+```{r número óptimo de grupos basado en AIC}
+opt_gmm <- Optimal_Clusters_GMM(scaled_data, max_clusters = 10, criterion = "AIC",
+                                dist_mode = "eucl_dist", plot_data = TRUE)
+```
+
+```{r ejecutar el modelo GMM para el número de grupos elegidos}
+gmm <- GMM(scaled_data, 3, dist_mode = "eucl_dist")
+gmm
+```
+
+```{r predicción de grupos}
+gmm_cluster <- predict(gmm, newdata = scaled_data)
+gmm_cluster
+```
+
+```{r transformar la variable gmm_cluster en lista}
+dt <- as.data.table(gmm_cluster, .keep.rownames = "word")
+typeof(dt)
+```
+
+```{r primero agregar una columna de grupos a los datos finales}
+final_data <- cbind(scaled_data, cluster = dt)
+final_data
+```
+
+```{r revisar el tamaño de los grupos}
+table(final_data$gmm_cluster)
+```
+
+```{r determinar el índice de silueta}
+fviz_silhouette(silhouette(final_data$gmm_cluster, dist(scaled_data)))
+```
+
+### Evaluando los resultados de agrupación
+
+Evaluaremos el algoritmo que arrojó los mejores resultados, k medias.
+
+```{r segunda agregación de columna de grupos a los datos finales}
+final_data <- cbind(sales, cluster = km$cluster)
+final_data
+```
+
+```{r Resumiendo datos}
+final_data |> group_by(cluster) |> 
+    summarise(across(everything(), list(mean)))
+```
+
+```{r evaluando las variables categóricas}
+table(final_data$cluster, final_data$Payment.Status)
+```
+
+```{r agregar columna a la base de datos escalada}
+final_scaled_data <- cbind(scaled_data, cluster = km$cluster)
+final_scaled_data
+```
+
+```{r primer resumen de numérico de todos los datos}
+final_scaled_data  |>  group_by(cluster) |> 
+    summarise(across(everything(), list(mean)))
+```
+
+### Agrupando los socios con pago retrasado
+
+```{r Filtrar los datos de socios con pago retrasado}
+sales <- sales[sales$Payment.Status == "Late", ]
+summary(sales)
+```
+
+```{r preparar los datos}
+set.seed(42)
+sales_subset <- subset(sales, select = c(Employee.Job.Title, Sales.Region, OrderMonth, OrderYear, OrderType, CustomerType, CustState, ProdCategory, Quantity, Price, Discount, Order.Total))
+sales_subset <- na.omit(sales_subset)
+dmy <- dummyVars("~.", data = sales_subset)
+trsf <- data.frame(predict(dmy, newdata = sales_subset))
+trsf.pre <- preProcess(trsf, method = "range")
+scaled_data <- predict(trsf.pre, trsf)
+
+```
+
+```{r Determinar número de grupo basado en WSS}
+fviz_nbclust(scaled_data, kmeans, method = "wss")
+```
+
+Utilizaremos 2 grupos.
+
+```{r segunda determinación del número de grupos basado en la silueta media}
+fviz_nbclust(scaled_data, kmeans, method = "silhouette")
+```
+
+```{r ejecutar el algoritmo de k-medias con 2 grupos}
+km <- kmeans(scaled_data, centers = 2, nstart = 25)
+km
+```
+
+```{r Obtener el índice de silueta}
+sil <- silhouette(km$cluster, dist(scaled_data))
+fviz_silhouette(sil)
+```
+
+```{r Tercera agregación de la columna de grupos a los datos}
+final_data <- cbind(sales, cluster = km$cluster)
+final_data
+```
+
+```{r evaluando las ventas por región, Sales.Region, por grupo}
+table(final_data$cluster, final_data$Sales.Region)
+```
+
+```{r Agregar columna a los datos escalados}
+final_scaled_data <- cbind(scaled_data, cluster = km$cluster)
+final_scaled_data <- as.data.frame(final_scaled_data)
+final_scaled_data
+```
+
+```{r segundo resumen de todos los datos numéricos}
+final_scaled_data |> group_by(cluster) |> 
+    summarise(across(everything(), list(mean)))
+```
+
+## Revisando la identidad de los grupos.
+
+El factor que identifica los grupos obtenidos es una composición de otras variablas, el factor más definido es el tipo de clentes, el más definido de los factores ha resultado ser el tipo de clientes, todos los clientes del grupo 2 son clientes comerciales, al tiempo que 184 de los 188 clientes del grupo 1 son clientes individuales.
+
+```{r tabla de tipos de socios según su grupo}
+table(final_data$CustomerType, final_data$cluster)
+```
